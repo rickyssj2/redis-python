@@ -1,20 +1,33 @@
-import socket  # noqa: F401
+import asyncio
 
+async def handle_client(reader, writer):
+    addr = writer.get_extra_info('peername')
+    print(f"Connection from {addr}")
 
-def main():
-    with socket.create_server(("localhost", 6379), reuse_port=True, ) as server:
+    try:
         while True:
-            conn, addr = server.accept()
-            print(f"addr: {addr}")
-            request = b""
-            with conn:
-                while True:
-                    request = conn.recv(100)
-                    if request.decode('utf-8').endswith("exit\n"):
-                        break
-                    print(request)
-                    conn.send(b"+PONG\r\n")
-            print("Client exited!\r\nConnection Closed.")
+            data = await reader.read(1024)            
+            if not data: # If no data is received, the client has closed the connection
+                break
+            print(f"Received {data.decode()} from {addr}")
+            writer.write(b"+PONG\r\n")
+            await writer.drain()  # Ensure data is sent before proceeding
+    except asyncio.CancelledError:
+        print("Connection was cancelled")
 
-if __name__ == "__main__":
-    main()
+    # Close the connection
+    print("Closing connection")
+    writer.close()
+
+async def main():
+    server = await asyncio.start_server(
+        handle_client, 'localhost', 6379
+    )
+    addr = server.sockets[0].getsockname()
+    print(f'Serving on {addr}')
+
+    async with server:
+        await server.serve_forever()
+
+if __name__ == '__main__':
+    asyncio.run(main())
